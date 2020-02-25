@@ -17,7 +17,8 @@ import {
   generateShader,
 } from './shaderGenerator.js'
 
-const colorRgbSocket = new Rete.Socket('rgba')
+const colorRgbaSocket = new Rete.Socket('rgba')
+const floatSocket = new Rete.Socket('float')
 
 class WebcamComponent extends Rete.Component {
   constructor() {
@@ -25,7 +26,7 @@ class WebcamComponent extends Rete.Component {
   }
 
   builder(node) {
-    node.addOutput(new Rete.Output('color', 'color', colorRgbSocket))
+    node.addOutput(new Rete.Output('color', 'color', colorRgbaSocket))
   }
 
   worker(node, inputs, outputs) {
@@ -50,7 +51,7 @@ class CanvasComponent extends Rete.Component {
   }
 
   builder(node) {
-    node.addInput(new Rete.Input('color', 'color', colorRgbSocket))
+    node.addInput(new Rete.Input('color', 'color', colorRgbaSocket))
   }
 
   worker(node, inputs, outputs, results) {
@@ -75,7 +76,7 @@ class CoolColorComponent extends Rete.Component {
   }
 
   builder(node) {
-    node.addOutput(new Rete.Output('color', 'color', colorRgbSocket))
+    node.addOutput(new Rete.Output('color', 'color', colorRgbaSocket))
   }
 
   worker(node, inputs, outputs) {
@@ -92,9 +93,9 @@ class BlendColorsComponent extends Rete.Component {
   }
 
   builder(node) {
-    node.addInput(new Rete.Input('colorA', 'color A', colorRgbSocket))
-    node.addInput(new Rete.Input('colorB', 'color B', colorRgbSocket))
-    node.addOutput(new Rete.Output('color', 'color', colorRgbSocket))
+    node.addInput(new Rete.Input('colorA', 'color A', colorRgbaSocket))
+    node.addInput(new Rete.Input('colorB', 'color B', colorRgbaSocket))
+    node.addOutput(new Rete.Output('color', 'color', colorRgbaSocket))
   }
 
   worker(node, inputs, outputs) {
@@ -118,11 +119,78 @@ class BlendColorsComponent extends Rete.Component {
   }
 }
 
+class SplitRgbaComponent extends Rete.Component {
+  constructor() {
+    super('Color Components - Split')
+  }
+
+  builder(node) {
+    node.addInput(new Rete.Input('color', 'color', colorRgbaSocket))
+
+    node.addOutput(new Rete.Output('red', 'red', floatSocket))
+    node.addOutput(new Rete.Output('green', 'green', floatSocket))
+    node.addOutput(new Rete.Output('blue', 'blue', floatSocket))
+    node.addOutput(new Rete.Output('alpha', 'alpha', floatSocket))
+  }
+
+  worker(node, inputs, outputs) {
+    const inputShader = inputs.color.length
+      ? inputs.color[0]
+      : new PartialShader([], glExpr`vec4(0.0, 0.0, 0.0, 1.0)`)
+    const inputColor = inputShader.workingExpression
+
+    outputs.red = inputShader.updateWorkingExpression(glExpr`(${inputColor}).r`)
+    outputs.green = inputShader.updateWorkingExpression(glExpr`(${inputColor}).g`)
+    outputs.blue = inputShader.updateWorkingExpression(glExpr`(${inputColor}).b`)
+    outputs.alpha = inputShader.updateWorkingExpression(glExpr`(${inputColor}).a`)
+  }
+}
+
+class JoinRgbaComponent extends Rete.Component {
+  constructor() {
+    super('Color Components - Join')
+  }
+
+  builder(node) {
+    node.addInput(new Rete.Input('red', 'red', floatSocket))
+    node.addInput(new Rete.Input('green', 'green', floatSocket))
+    node.addInput(new Rete.Input('blue', 'blue', floatSocket))
+    node.addInput(new Rete.Input('alpha', 'alpha', floatSocket))
+
+    node.addOutput(new Rete.Output('color', 'color', colorRgbaSocket))
+  }
+
+  worker(node, inputs, outputs) {
+    const inputRed = this._inputOrDefault(inputs.red)
+    const inputGreen = this._inputOrDefault(inputs.green)
+    const inputBlue = this._inputOrDefault(inputs.blue)
+    const inputAlpha = this._inputOrDefault(inputs.alpha)
+
+    const red = inputRed.workingExpression
+    const green = inputGreen.workingExpression
+    const blue = inputBlue.workingExpression
+    const alpha = inputAlpha.workingExpression
+
+    const resultVec = glExpr`vec4(${red}, ${green}, ${blue}, ${alpha})`
+
+    outputs.color = inputRed
+      .combineWith(inputGreen)
+      .combineWith(inputBlue)
+      .combineWith(inputAlpha, [], resultVec)
+  }
+
+  _inputOrDefault(input) {
+    return input.length ? input[0] : new PartialShader([], new GlFloat(0.0))
+  }
+}
+
 const RETE_COMPONENTS = [
   new CanvasComponent(),
   new WebcamComponent(),
   new CoolColorComponent(),
   new BlendColorsComponent(),
+  new SplitRgbaComponent(),
+  new JoinRgbaComponent(),
 ]
 
 const ShaderEditorContent = styled.div`
@@ -305,7 +373,7 @@ export function ShaderEditor(props) {
 
 const MenuContainer = styled.div`
   position: fixed;
-  width: 200px;
+  width: 240px;
   max-height: 320px;
   overflow-y: auto;
   display: ${props => (props.show ? 'block' : 'none')};

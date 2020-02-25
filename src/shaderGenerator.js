@@ -178,7 +178,13 @@ export function generateShader(partialShader) {
     let codeToAdd = ''
 
     if (statement instanceof GlVarDef) {
-      unusedVariables.set(statement.name, statement)
+      if (unusedVariables.has(statement.name)) {
+        if (unusedVariables.get(statement.name) !== statement) {
+          throw new Error(`Conflicting variable definition for ${statement.name}`)
+        }
+      } else {
+        unusedVariables.set(statement.name, statement)
+      }
     } else if (statement instanceof GlSetFragColorStatement) {
       refsToResolve.push(...statement.getRefs())
       // TODO: handle tab levels or something
