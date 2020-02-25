@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState, useEffect } from 'react'
+import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react'
 import styled from 'styled-components/macro'
 import Rete from 'rete'
 import ReactRenderPlugin from 'rete-react-render-plugin'
@@ -345,22 +345,33 @@ const MenuHeader = styled.div`
 `
 
 function InsertMenu({ show, position, components, onInsert }) {
+  const onInsertRef = useRef()
+  onInsertRef.current = onInsert
+
   const style = {
     left: position?.x ?? 0,
     top: position?.y ?? 0,
   }
 
-  const items = []
-  if (components) {
-    let i = 0
-    for (const name of components.keys()) {
-      items.push(
-        <MenuItem key={i++} onClick={() => onInsert(name)}>
-          {name}
-        </MenuItem>,
-      )
+  const items = useMemo(() => {
+    console.log('resorting')
+
+    const result = []
+    if (components) {
+      let i = 0
+      console.dir(Array.from(components.keys()))
+      const componentNames = Array.from(components.keys()).sort((a, b) => a.localeCompare(b))
+      for (const name of componentNames) {
+        result.push(
+          <MenuItem key={i++} onClick={() => onInsertRef.current(name)}>
+            {name}
+          </MenuItem>,
+        )
+      }
     }
-  }
+
+    return result
+  }, [components])
 
   return (
     <MenuContainer show={show} style={style}>
