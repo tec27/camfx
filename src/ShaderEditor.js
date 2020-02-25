@@ -5,7 +5,17 @@ import ReactRenderPlugin from 'rete-react-render-plugin'
 import ConnectionPlugin from 'rete-connection-plugin'
 import AreaPlugin from 'rete-area-plugin'
 import { VERSION_STRING } from './version.js'
-import { ShaderGenerator } from './shaderGenerator.js'
+import {
+  PartialShader,
+  GlFloat,
+  GlVec2,
+  GlVec4,
+  GlVarDef,
+  GlVarRef,
+  GlExpression,
+  GlSetFragColorStatement,
+  generateShader,
+} from './shaderGenerator.js'
 
 const colorRgbSocket = new Rete.Socket('rgba')
 
@@ -18,9 +28,25 @@ class WebcamComponent extends Rete.Component {
     node.addOutput(new Rete.Output('color', 'color', colorRgbSocket))
   }
 
-  worker(node, inputs, outputs, shaderGen) {
+  worker(node, inputs, outputs) {
     // TODO: support coordinate input
-    outputs.color = shaderGen.textureSample(0, 0)
+    const offsetX = new GlFloat(0)
+    const offsetY = new GlFloat(0)
+    const sampleCoord = new GlVec2(
+      new GlExpression([offsetX, ' / resolution.x']),
+      new GlExpression([offsetY, ' / resolution.y']),
+    )
+    const varName = `tex_${node.id}`
+    outputs.color = new PartialShader(
+      [
+        new GlVarDef(
+          varName,
+          'vec4',
+          new GlExpression(['texture2D(videoTexture, vTexCoord + ', sampleCoord, ')']),
+        ),
+      ],
+      new GlVarRef(varName),
+    )
   }
 }
 
@@ -33,11 +59,19 @@ class CanvasComponent extends Rete.Component {
     node.addInput(new Rete.Input('color', 'color', colorRgbSocket))
   }
 
-  worker(node, inputs, outputs, shaderGen) {
-    const color = inputs.color.length
-      ? shaderGen.referenceVariable(inputs.color[0])
-      : 'vec4(0.0, 0.0, 0.0, 1.0)'
-    shaderGen.fragColor(color)
+  worker(node, inputs, outputs, results) {
+    const shader = inputs.color.length
+      ? inputs.color[0]
+      : new PartialShader(
+          [],
+          new GlVec4(new GlFloat(0), new GlFloat(0), new GlFloat(0), new GlFloat(1)),
+        )
+
+    const finalShader = shader.completeStatement([
+      new GlSetFragColorStatement(shader.workingExpression),
+    ])
+
+    results.set(node.id, finalShader)
   }
 }
 
@@ -50,12 +84,58 @@ class CoolColorComponent extends Rete.Component {
     node.addOutput(new Rete.Output('color', 'color', colorRgbSocket))
   }
 
-  worker(node, inputs, outputs, shaderGen) {
-    outputs.color = shaderGen.makeVariable('vec4', 'color', 'vec4(0.0, 0.7, 0.7, 1.0)')
+  worker(node, inputs, outputs) {
+    outputs.color = new PartialShader(
+      [],
+      new GlVec4(new GlFloat(0.0), new GlFloat(0.7), new GlFloat(0.7), new GlFloat(1.0)),
+    )
   }
 }
 
-const RETE_COMPONENTS = [new CanvasComponent(), new WebcamComponent(), new CoolColorComponent()]
+class BlendColorsComponent extends Rete.Component {
+  constructor() {
+    super('Blend Colors')
+  }
+
+  builder(node) {
+    node.addInput(new Rete.Input('colorA', 'color A', colorRgbSocket))
+    node.addInput(new Rete.Input('colorB', 'color B', colorRgbSocket))
+    node.addOutput(new Rete.Output('color', 'color', colorRgbSocket))
+  }
+
+  worker(node, inputs, outputs) {
+    if (!inputs.colorA.length && !inputs.colorB.length) {
+      outputs.color = new PartialShader(
+        [],
+        new GlVec4(new GlFloat(0.0), new GlFloat(0.0), new GlFloat(0.0), new GlFloat(1.0)),
+      )
+    } else if (!inputs.colorA.length || !inputs.colorB.length) {
+      outputs.color = inputs.colorA.length ? inputs.colorA[0] : inputs.colorB[0]
+    } else {
+      const colorA = inputs.colorA[0]
+      const colorB = inputs.colorB[0]
+
+      outputs.color = colorA.combineWith(
+        colorB,
+        undefined,
+        new GlExpression([
+          '(',
+          colorA.workingExpression,
+          ' + ',
+          colorB.workingExpression,
+          ') / 2.0',
+        ]),
+      )
+    }
+  }
+}
+
+const RETE_COMPONENTS = [
+  new CanvasComponent(),
+  new WebcamComponent(),
+  new CoolColorComponent(),
+  new BlendColorsComponent(),
+]
 
 const ShaderEditorContent = styled.div`
   position: relative;
@@ -141,11 +221,13 @@ export function ShaderEditor(props) {
           await Promise.resolve()
           const engine = engineRef.current
           await engine.abort()
-          const shaderGen = new ShaderGenerator()
+          const canvasResults = new Map()
           // TODO: handle multiple canvases better? don't allow them to be removed/added?
           const canvasId = editor.nodes.find(n => n.name === 'Canvas')?.id
-          await engine.process(editor.toJSON(), canvasId, shaderGen)
-          onShaderGeneratedRef.current(shaderGen.getSource())
+          await engine.process(editor.toJSON(), canvasId, canvasResults)
+          if (canvasResults.has(canvasId)) {
+            onShaderGeneratedRef.current(generateShader(canvasResults.get(canvasId)))
+          }
         } finally {
           processingRef.current = false
         }
