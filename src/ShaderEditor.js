@@ -422,12 +422,9 @@ function InsertMenu({ show, position, components, onInsert }) {
   }
 
   const items = useMemo(() => {
-    console.log('resorting')
-
     const result = []
     if (components) {
       let i = 0
-      console.dir(Array.from(components.keys()))
       const componentNames = Array.from(components.keys()).sort((a, b) => a.localeCompare(b))
       for (const name of componentNames) {
         result.push(
