@@ -97,16 +97,8 @@ export class GlVarRef {
 }
 
 export class GlExpression {
-  constructor(parts) {
+  constructor(...parts) {
     this.parts = parts
-  }
-
-  append(parts) {
-    return new GlExpression([...this.parts, ...parts])
-  }
-
-  prepend(parts) {
-    return new GlExpression([...parts, ...this.parts])
   }
 
   toGlsl() {
@@ -116,6 +108,21 @@ export class GlExpression {
   getRefs() {
     return this.parts.flatMap(p => (typeof p === 'string' ? [] : p.getRefs()))
   }
+}
+
+// Tagged template literal function for creating a GlExpression. All values should themselves be
+// expressions of some type (e.g. something that has toGlsl and getRefs methods)
+export function glExpr(strings, ...values) {
+  const parts = []
+  for (let i = 0; i < values.length; i++) {
+    parts.push(strings[i])
+    parts.push(values[i])
+  }
+  if (strings.length > 0) {
+    parts.push(strings[strings.length - 1])
+  }
+
+  return new GlExpression(...parts)
 }
 
 export class GlSetFragColorStatement {

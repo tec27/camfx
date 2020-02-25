@@ -12,7 +12,7 @@ import {
   GlVec4,
   GlVarDef,
   GlVarRef,
-  GlExpression,
+  glExpr,
   GlSetFragColorStatement,
   generateShader,
 } from './shaderGenerator.js'
@@ -33,18 +33,12 @@ class WebcamComponent extends Rete.Component {
     const offsetX = new GlFloat(0)
     const offsetY = new GlFloat(0)
     const sampleCoord = new GlVec2(
-      new GlExpression([offsetX, ' / resolution.x']),
-      new GlExpression([offsetY, ' / resolution.y']),
+      glExpr`${offsetX} / resolution.x`,
+      glExpr`${offsetY} / resolution.y`,
     )
     const varName = `tex_${node.id}`
     outputs.color = new PartialShader(
-      [
-        new GlVarDef(
-          varName,
-          'vec4',
-          new GlExpression(['texture2D(videoTexture, vTexCoord + ', sampleCoord, ')']),
-        ),
-      ],
+      [new GlVarDef(varName, 'vec4', glExpr`texture2D(videoTexture, vTexCoord + ${sampleCoord})`)],
       new GlVarRef(varName),
     )
   }
@@ -118,13 +112,7 @@ class BlendColorsComponent extends Rete.Component {
       outputs.color = colorA.combineWith(
         colorB,
         undefined,
-        new GlExpression([
-          '(',
-          colorA.workingExpression,
-          ' + ',
-          colorB.workingExpression,
-          ') / 2.0',
-        ]),
+        glExpr`(${colorA.workingExpression} + ${colorB.workingExpression}) / 2.0`,
       )
     }
   }
